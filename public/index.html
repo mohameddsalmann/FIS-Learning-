@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Ask questions, dictate a prompt, or bring a clip to your FIS study room.">
+  <title>FIS Chatbot</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/combobox.js" defer></script>
+  <script src="/app.js" defer></script>
+  <script src="/media.js" defer></script>
+  <script src="/study-tools.js" defer></script>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6v14M3 4c4-1 7 0 9 2 2-2 5-3 9-2v14c-4-1-7 0-9 2-2-2-5-3-9-2z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5l1.2-3a7.5 7.5 0 1 1 13.8-4.5zM9 11h7M9 14h4"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3m-3 0h6"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 10-8.5 8.5A5 5 0 0 1 4.4 11.4l8.5-8.5a3 3 0 0 1 4.2 4.2l-8.4 8.5a1 1 0 0 1-1.4-1.4l7-7"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 24 24"><path d="M20 15.5A8.3 8.3 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16M9 4v4m6 2v4m-5 2v4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-tools" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 17h6m-3-3v6"/></symbol>
+  </svg>
+
+  <a class="skip-link" href="#chatInput">Skip to message</a>
+  <aside class="sidebar" id="sidebar" aria-label="Study room navigation">
+    <div class="brand">
+      <span class="brand-mark"><svg aria-hidden="true"><use href="#i-book"/></svg></span>
+      <div><strong>FIS</strong><span>Learning Assistant</span></div>
+    </div>
+    <button class="new-chat" id="newChatBtn" type="button"><svg aria-hidden="true"><use href="#i-plus"/></svg> New chat</button>
+    <nav class="history" aria-label="Chat history">
+      <h2>Recent chats</h2>
+      <div id="conversationList"></div>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="side-action" id="themeToggle" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-theme"/></svg> Dark theme</button>
+      <button class="side-action" id="settingsToggle" type="button"><svg aria-hidden="true"><use href="#i-settings"/></svg> Settings</button>
+    </div>
+  </aside>
+  <button class="sidebar-scrim" id="sidebarScrim" type="button" aria-label="Close chat history" hidden></button>
+
+  <main class="main" id="main">
+    <header class="top-bar">
+      <div class="room-title">
+        <button class="icon-btn sidebar-toggle" id="sidebarToggle" type="button" aria-label="Chat history" aria-expanded="false" aria-controls="sidebar"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
+        <h1 class="room-heading">Study room</h1>
+      </div>
+      <div class="model-control">
+        <span class="free-status">Free models</span>
+        <label class="sr-only" for="chatModel">OpenRouter chat model</label>
+        <div class="combobox combo-wide">
+          <input id="chatModel" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" spellcheck="false" placeholder="Loading models…" disabled>
+          <button type="button" tabindex="-1" aria-label="Show chat models" disabled><svg aria-hidden="true"><use href="#i-chevron"/></svg></button>
+        </div>
+        <button class="small-action" id="retryModels" type="button" hidden>Retry</button>
+      </div>
+    </header>
+
+    <div class="messages" id="messagesContainer" role="region" aria-label="Conversation" tabindex="0">
+      <div class="thread" id="thread"></div>
+    </div>
+
+    <template id="welcomeTemplate">
+      <section class="welcome" aria-labelledby="welcomeTitle">
+        <div class="welcome-lead">
+          <div>
+            <h2 id="welcomeTitle" class="welcome-title">What are we<br class="desktop-break"> learning today?</h2>
+            <p>Work through a tricky idea, talk through a question, or unpack a part of your lesson.</p>
+          </div>
+          <div class="study-art" aria-hidden="true">
+            <div class="study-orbit"></div>
+            <div class="study-sheet study-sheet-back"></div>
+            <div class="study-sheet study-sheet-front"><span></span><i></i><i></i><i></i><svg><use href="#i-book"/></svg></div>
+            <div class="study-play"><svg><use href="#i-video"/></svg></div>
+            <div class="study-spark">✦</div>
+          </div>
+        </div>
+        <div class="mode-cards" aria-label="Ways to ask">
+          <button type="button" class="mode-card" data-mode="text">
+            <span class="mode-icon"><svg aria-hidden="true"><use href="#i-chat"/></svg></span><span><strong>Ask a question</strong><small>Get a step-by-step explanation.</small></span><svg class="mode-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+          </button>
+          <button type="button" class="mode-card" data-mode="voice">
+            <span class="mode-icon"><svg aria-hidden="true"><use href="#i-mic"/></svg></span><span><strong>Dictate a question</strong><small>Speak and edit your draft.</small></span><svg class="mode-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+          </button>
+          <button type="button" class="mode-card" data-mode="video">
+            <span class="mode-icon"><svg aria-hidden="true"><use href="#i-video"/></svg></span><span><strong>Analyze a video</strong><small>Ask about a short MP4 clip.</small></span><svg class="mode-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+          </button>
+        </div>
+      </section>
+    </template>
+
+    <section class="input-area" aria-label="Compose a message">
+      <p id="composerStatus" class="composer-status" role="status" hidden></p>
+      <form id="composer" class="composer">
+        <div id="attachmentPreview" class="attachment-panel" hidden>
+          <p id="attachmentCount" class="attachment-count" role="status"></p>
+          <ul id="attachmentList" class="attachment-list" aria-label="Files attached to draft"></ul>
+        </div>
+        <label for="chatInput" class="sr-only">Message FIS</label>
+        <textarea id="chatInput" rows="2" dir="auto" maxlength="16000" placeholder="Ask a question or add something to study…"></textarea>
+        <div class="composer-toolbar">
+          <div class="composer-actions">
+            <button id="attachBtn" class="tool-button" type="button" title="Attach an image or PDF"><svg aria-hidden="true"><use href="#i-clip"/></svg><span>Attach</span></button>
+            <button id="voiceBtn" class="tool-button" type="button"><svg aria-hidden="true"><use href="#i-mic"/></svg><span>Voice</span></button>
+            <button id="videoBtn" class="tool-button" type="button"><svg aria-hidden="true"><use href="#i-video"/></svg><span>Video</span></button>
+            <button id="studyToolsBtn" class="tool-button study-tools-button" type="button" aria-label="Study tools" title="Study tools"><svg aria-hidden="true"><use href="#i-tools"/></svg><span>Tools</span></button>
+          </div>
+          <button id="sendBtn" class="send-btn" type="submit" disabled><span>Send</span><svg aria-hidden="true"><use href="#i-up"/></svg></button>
+        </div>
+        <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple hidden>
+        <input id="videoInput" type="file" accept="video/mp4,.mp4" multiple hidden>
+      </form>
+      <p class="study-note">FIS can make mistakes. Check important information.</p>
+    </section>
+  </main>
+
+  <dialog id="settingsPanel" aria-labelledby="settingsTitle">
+    <div class="dialog-heading"><h2 id="settingsTitle">Model settings</h2><button class="icon-btn" data-close type="button" aria-label="Close settings"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <label for="speechModel">Read-aloud model</label>
+    <div class="combobox">
+      <input id="speechModel" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" spellcheck="false" placeholder="Loading models…" disabled>
+      <button type="button" tabindex="-1" aria-label="Show speech models" disabled><svg aria-hidden="true"><use href="#i-chevron"/></svg></button>
+    </div>
+    <div class="settings-group"><label for="temperatureSlider">Temperature <output id="tempVal">0.7</output></label><input type="range" id="temperatureSlider" min="0" max="2" step="0.1" value="0.7"></div>
+    <div class="settings-group"><label for="topPSlider">Top P <output id="topPVal">1</output></label><input type="range" id="topPSlider" min="0.05" max="1" step="0.05" value="1"></div>
+    <div class="settings-group"><label for="maxTokensSlider">Max response tokens <output id="maxTokensVal">2048</output></label><input type="range" id="maxTokensSlider" min="256" max="4096" step="256" value="2048"></div>
+  </dialog>
+
+  <dialog id="voiceDialog" aria-labelledby="voiceTitle">
+    <div class="dialog-heading"><h2 id="voiceTitle">Dictate a question</h2><button class="icon-btn" data-close type="button" aria-label="Close voice dictation"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <p>Dictation stays on this device. Review what you said before adding it to your message.</p>
+    <label for="voiceLanguage">Dictation language</label>
+    <div class="combobox">
+      <input id="voiceLanguage" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" spellcheck="false">
+      <button type="button" tabindex="-1" aria-label="Show dictation languages"><svg aria-hidden="true"><use href="#i-chevron"/></svg></button>
+    </div>
+    <label for="voiceDraft">Transcript</label>
+    <textarea id="voiceDraft" rows="4" dir="auto" placeholder="Your words will appear here."></textarea>
+    <p id="voiceStatus" class="dialog-status" role="status">Ready to check local dictation.</p>
+    <div class="dialog-actions">
+      <button id="voiceStart" class="tool-button outlined" type="button"><svg aria-hidden="true"><use href="#i-mic"/></svg><span>Start dictation</span></button>
+      <button id="voiceApply" class="send-btn" type="button" disabled>Use transcript</button>
+    </div>
+  </dialog>
+
+  <dialog id="studyTools" aria-labelledby="studyToolsTitle">
+    <div class="dialog-heading"><h2 id="studyToolsTitle">Study tools</h2><button class="icon-btn" data-close type="button" aria-label="Close study tools"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <fieldset class="study-mode">
+      <legend class="sr-only">Choose a study tool</legend>
+      <label><input type="radio" name="studyMode" value="image" checked> Create image</label>
+      <label><input type="radio" name="studyMode" value="check"> Check answer</label>
+      <label><input type="radio" name="studyMode" value="notes"> Search notes</label>
+    </fieldset>
+    <form id="studyForm">
+      <label for="studyModel" id="studyModelLabel">Image model</label>
+      <div class="combobox">
+        <input id="studyModel" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" spellcheck="false" disabled>
+        <button type="button" tabindex="-1" aria-label="Show study tool models" disabled><svg aria-hidden="true"><use href="#i-chevron"/></svg></button>
+      </div>
+      <div data-study-fields="image">
+        <label for="imagePrompt">Describe your study illustration</label>
+        <textarea id="imagePrompt" name="prompt" rows="3" maxlength="2000" placeholder="A cross-section of a leaf showing its layers"></textarea>
+      </div>
+      <div data-study-fields="check" hidden>
+        <label for="studyQuestion">Question</label>
+        <textarea id="studyQuestion" name="question" rows="2" maxlength="2000"></textarea>
+        <label for="studyAnswer">Your answer</label>
+        <textarea id="studyAnswer" name="answer" rows="3" maxlength="4000"></textarea>
+        <label for="studyReference">Reference answer (optional)</label>
+        <textarea id="studyReference" name="reference" rows="2" maxlength="4000"></textarea>
+      </div>
+      <div data-study-fields="notes" hidden>
+        <label for="notesQuery">What are you looking for?</label>
+        <input id="notesQuery" name="query" class="study-input" maxlength="1000">
+        <label for="studyNotes">Paste your notes</label>
+        <textarea id="studyNotes" name="notes" rows="5" maxlength="16000" placeholder="Put each topic or passage on a new line."></textarea>
+        <label class="study-check"><input id="rerankNotes" name="rerank" type="checkbox" checked> Refine with Nemotron Rerank</label>
+      </div>
+      <p id="studyStatus" class="dialog-status" role="status"></p>
+      <div class="dialog-actions"><button id="studySubmit" class="send-btn" type="submit">Create image</button></div>
+    </form>
+    <div id="studyResult" class="study-result" hidden></div>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,25 @@
+.selection, .transfer { display: grid; gap: .55rem; min-inline-size: 0; }
+.selection p { margin: 0; }
+.dropZone, .filePreview {
+  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; min-inline-size: 0;
+  border: 1px dashed var(--control-line); border-radius: .8rem; padding: .85rem; background: var(--soft);
+}
+.dropZone[data-dragging="true"], .dropZone:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dropZone > div, .filePreview > div { flex: 1 1 9rem; min-inline-size: 0; overflow-wrap: anywhere; }
+.dropZone > svg, .filePreview > svg { flex: none; }
+.dropZone strong, .filePreview strong { display: block; font-size: .92rem; }
+.dropZone p, .filePreview small, .transfer small { color: var(--muted); font-size: .8rem; }
+.filePreview { border: 1px solid var(--line); background: var(--panel); }
+.transfer { font-size: .85rem; }
+.transfer progress { display: block; inline-size: 100%; block-size: .55rem; accent-color: var(--accent); }
+.checkpoint { display: grid; gap: .35rem; margin-block: .45rem; }
+.checkpoint summary { cursor: pointer; font-size: .83rem; font-weight: 650; }
+.counters, .stages { display: flex; flex-wrap: wrap; gap: .3rem .6rem; min-inline-size: 0; }
+.counters { color: var(--muted); font-size: .81rem; }
+.stages { margin-block-start: .4rem; }
+.stages span {
+  display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; padding: .16rem .36rem;
+  border: 1px solid var(--line); border-radius: .3rem; color: var(--muted);
+}
+.stages span[data-state="current"] { color: var(--ink); border-color: var(--control-line); font-weight: 700; }
+.stages span[data-state="done"] { color: var(--ink); background: var(--soft); }

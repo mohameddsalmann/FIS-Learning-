@@ -1,0 +1,130 @@
+name: Deploy verified FIS release
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Protected GitHub environment and Vercel deployment target
+        type: choice
+        options:
+          - preview
+          - production
+        default: preview
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: fis-release-${{ inputs.target }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+  deploy:
+    needs: verify
+    if: inputs.target == 'preview' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      FIS_DEPLOY_TARGET: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Inspect deployment settings and files
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          for name in VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing release variable $name." >&2
+              exit 1
+            fi
+          done
+          mkdir -p .vercel
+          node -e '
+            const { VERCEL_ORG_ID: orgId, VERCEL_PROJECT_ID: projectId } = process.env;
+            require("node:fs").writeFileSync(".vercel/project.json", JSON.stringify({ orgId, projectId }));
+          '
+          npx --yes vercel@55.0.0 deploy --dry --format json --token "$VERCEL_TOKEN" | node -e '
+            const { framework, files } = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+            if (framework?.slug !== "nextjs" || !Array.isArray(files)) throw new Error("Vercel did not detect the Next.js application.");
+            const paths = files.map(file => (typeof file === "string" ? file : file.path).replaceAll("\\", "/"));
+            if (paths.some(path => /(^|\/)\.env(\.|$)|^data\//.test(path))) throw new Error("Deployment contains a local environment or legacy data file.");
+            console.log(`Vercel detected Next.js and selected ${paths.length} source files.`);
+          '
+          env_file=$(mktemp)
+          trap 'rm -f "$env_file"' EXIT
+          npx --yes vercel@55.0.0 env ls "$FIS_DEPLOY_TARGET" --format json --token "$VERCEL_TOKEN" > "$env_file"
+          if [[ "$FIS_DEPLOY_TARGET" == preview ]]; then
+            npx --yes vercel@55.0.0 env ls preview "$GITHUB_REF_NAME" --format json --token "$VERCEL_TOKEN" >> "$env_file"
+          fi
+          node - "$env_file" <<'NODE'
+          const entries = require('node:fs').readFileSync(process.argv[2], 'utf8').trim().split(/\n(?=\{)/);
+          const names = new Set(entries.flatMap(json => JSON.parse(json).envs.map(entry => entry.key)));
+          const required = ['DATABASE_URL', 'BLOB_READ_WRITE_TOKEN', 'BETTER_AUTH_SECRET'];
+          if (process.env.FIS_DEPLOY_TARGET === 'production') required.push('BETTER_AUTH_URL');
+          const missing = required.filter(name => !names.has(name));
+          const hasGemini = (
+            names.has('GEMINI_PRIMARY_FREE_TIER_CONFIRMED')
+            && ['GEMINI_API_KEY_PRIMARY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY'].some(name => names.has(name))
+          ) || (names.has('GEMINI_SECONDARY_FREE_TIER_CONFIRMED') && names.has('GEMINI_API_KEY_SECONDARY'));
+          if (!names.has('OPENROUTER_API_KEY') && !hasGemini) missing.push('eligible tutor and embedding provider configuration');
+          if (missing.length) throw new Error(`Missing Vercel settings for ${process.env.FIS_DEPLOY_TARGET}: ${missing.join(', ')}.`);
+          console.log('Expected environment variable names are present. Runtime smoke checks are still required.');
+          NODE
+      - run: npm ci
+      - name: Apply reviewed migration to the selected database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo 'The protected GitHub environment needs DATABASE_URL for Prisma migrations.' >&2
+            exit 1
+          fi
+          npm run db:deploy
+      - name: Build and deploy without switching the production domain
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          target=()
+          if [[ "$FIS_DEPLOY_TARGET" == production ]]; then
+            target+=(--prod --skip-domain)
+          else
+            target+=(--meta githubDeployment=1 --meta "githubCommitRef=$GITHUB_REF_NAME")
+          fi
+          url=$(npx --yes vercel@55.0.0 deploy --yes "${target[@]}" --token "$VERCEL_TOKEN")
+          if [[ ! "$url" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]; then
+            echo 'Vercel did not return a generated HTTPS deployment URL.' >&2
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Smoke-test the generated HTTPS URL
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          FIS_DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          for route in / /api/workspace/dashboard; do
+            status=$(npx --yes vercel@55.0.0 curl "$route" --deployment "$FIS_DEPLOY_URL" --token "$VERCEL_TOKEN" -- --silent --show-error --output /dev/null --max-time 25 --write-out '%{http_code}')
+            expected=200
+            if [[ "$route" == /api/workspace/dashboard ]]; then expected=401; fi
+            if [[ "$status" != "$expected" ]]; then
+              echo "HTTPS smoke check for $route returned $status, expected $expected." >&2
+              exit 1
+            fi
+            echo "$route returned HTTP $status."
+          done
+          npx --yes vercel@55.0.0 curl /api/learning/models --deployment "$FIS_DEPLOY_URL" --token "$VERCEL_TOKEN" -- --fail --silent --show-error --max-time 25 | node -e '
+            const { models } = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+            const free = new Set(models.filter(model => model.cost === "free" && model.availability === "available" && model.gateway !== "xai").map(model => model.kind));
+            if (!free.has("chat") || !free.has("embedding")) throw new Error("The catalog has no available automatic free chat and embedding routes.");
+            console.log("The hosted catalog returned available free chat and embedding routes.");
+          '
+          echo "Verified HTTPS routes on $FIS_DEPLOY_URL." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$FIS_DEPLOY_TARGET" == production ]]; then
+            echo 'Production domains have not moved. Complete the release smoke checks before promotion.' >> "$GITHUB_STEP_SUMMARY"
+          fi

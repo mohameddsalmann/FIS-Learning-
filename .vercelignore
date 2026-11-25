@@ -1,0 +1,16 @@
+# Keep local credentials and persisted legacy jobs off the deployment upload.
+.env
+.env.*
+/data/
+
+# The former Express app stays in the repository as a migration reference.
+/server.js
+/free-chat.js
+/free-models.js
+/study-tools.js
+/public/app.js
+/public/combobox.js
+/public/index.html
+/public/media.js
+/public/study-tools.js
+/public/styles.css

@@ -1,0 +1,75 @@
+{
+  "name": "fis-chatbot",
+  "version": "1.0.0",
+  "description": "FIS Learning course workspace with grounded tutoring and practice",
+  "scripts": {
+    "start": "next start",
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "lint": "eslint .",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "eval": "tsx scripts/evaluate-sample.ts",
+    "eval:retrieval": "tsx scripts/evaluate-retrieval.ts",
+    "db:generate": "prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status"
+  },
+  "dependencies": {
+    "@google/genai": "3.6.1",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "@radix-ui/react-slot": "^1.5.0",
+    "@vercel/blob": "^2.9.0",
+    "better-auth": "^1.7.26",
+    "dotenv": "^16.6.1",
+    "katex": "^0.19.1",
+    "lucide-react": "^1.75.0",
+    "next": "^16.4.6",
+    "pdfjs-dist": "^4.10.38",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@tailwindcss/postcss": "^4.3.5",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.6",
+    "jsdom": "^28.1.0",
+    "postcss": "^8.5.33",
+    "prisma": "^7.10.1",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": "^22.13.0 || 24.x"
+  },
+  "overrides": {
+    "@vercel/cli-config": {
+      "zod": "$zod"
+    },
+    "@vercel/blob": {
+      "undici": "6.29.1"
+    },
+    "katex": "$katex",
+    "@prisma/config": {
+      "effect": "3.22.5"
+    }
+  }
+}

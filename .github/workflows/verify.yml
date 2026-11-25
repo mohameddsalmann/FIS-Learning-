@@ -1,0 +1,43 @@
+name: Verify learning application
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: fis_test
+          POSTGRES_USER: fis
+          POSTGRES_PASSWORD: fis-test-only
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U fis" --health-interval 10s --health-timeout 5s --health-retries 6
+    env:
+      DATABASE_URL: postgresql://fis:fis-test-only@localhost:5432/fis_test
+      BETTER_AUTH_SECRET: disposable-ci-auth-secret-for-tests-only
+      BETTER_AUTH_URL: http://localhost:3100
+      FIS_TEST_DB: "1"
+      FIS_INTEGRATION_DATABASE: isolated
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run db:deploy
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run eval
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

@@ -1,0 +1,424 @@
+generator client {
+  provider    = "prisma-client"
+  output      = "../src/server/db/generated"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DocumentStatus {
+  UPLOADING
+  PENDING
+  EXTRACTING
+  CHUNKING
+  EMBEDDING
+  INDEXING
+  PREPARING_SUGGESTIONS
+  READY
+  FAILED
+  OCR_REQUIRED
+  DELETING
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+  SHORT
+}
+
+model User {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  isAnonymous   Boolean  @default(false)
+  deletionPending Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  courses       Course[]
+  conversations Conversation[]
+  quizAttempts  QuizAttempt[]
+  topicProgress TopicProgress[]
+  revisionItems RevisionItem[]
+  usages        UsageRecord[]
+  aiActions     AiAction[]
+  aiAttempts    AiProviderAttempt[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String   @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rate_limit")
+}
+
+model Course {
+  id           String       @id @default(cuid())
+  ownerId      String
+  owner        User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title        String
+  description  String       @default("")
+  deletionPending Boolean   @default(false)
+  documents    Document[]
+  topics       Topic[]
+  quizzes      Quiz[]
+  conversations Conversation[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([ownerId, updatedAt])
+}
+
+model Topic {
+  id          String          @id @default(cuid())
+  courseId    String
+  course      Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  position    Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  quizzes     Quiz[]
+  progress    TopicProgress[]
+  revisions   RevisionItem[]
+
+  @@unique([courseId, title])
+  @@index([courseId, position])
+}
+
+model Document {
+  id              String         @id @default(cuid())
+  courseId        String
+  course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title           String
+  pathname        String         @unique
+  sizeBytes       Int
+  pageCount       Int            @default(0)
+  status          DocumentStatus @default(UPLOADING)
+  error           String?
+  learningOutline Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  chunks          DocumentChunk[]
+  job             DocumentProcessingJob?
+
+  @@index([courseId, status])
+}
+
+model DocumentProcessingJob {
+  id              String         @id @default(cuid())
+  documentId      String         @unique
+  document        Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  state           DocumentStatus @default(PENDING)
+  leaseToken      String?
+  leaseExpiresAt  DateTime?
+  processedChunks Int            @default(0)
+  totalChunks     Int            @default(0)
+  extractedTitle  String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model DocumentChunk {
+  id                 String   @id @default(cuid())
+  documentId         String
+  document           Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  page               Int
+  ordinal            Int
+  text               String
+  contentHash        String
+  embedding          Unsupported("vector")?
+  searchVector       Unsupported("tsvector")?
+  embeddingModel     String?
+  embeddingDimension Int?
+  processingVersion  Int      @default(1)
+  chunkStrategy      String   @default("page-window-v1")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([documentId, ordinal, processingVersion])
+  @@index([documentId, embeddingModel, embeddingDimension, processingVersion])
+  @@index([contentHash, embeddingModel, processingVersion])
+}
+
+model Conversation {
+  id        String     @id @default(cuid())
+  ownerId   String
+  owner     User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  courseId  String?
+  course    Course?    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title     String
+  messages  Message[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([ownerId, updatedAt])
+  @@index([courseId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String
+  model          String?
+  citations      Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Quiz {
+  id          String        @id @default(cuid())
+  courseId    String
+  course      Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topicId     String?
+  topic       Topic?        @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  title       String
+  questions   Question[]
+  attempts    QuizAttempt[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([courseId, createdAt])
+  @@index([topicId])
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  quizId      String
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  prompt      String
+  type        QuestionType
+  options     String[]
+  answer      String
+  explanation String
+  sourceIds   String[]
+  position    Int
+  answers     StudentAnswer[]
+  createdAt   DateTime     @default(now())
+
+  @@unique([quizId, position])
+}
+
+model QuizAttempt {
+  id          String          @id @default(cuid())
+  ownerId     String
+  owner       User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  quizId      String
+  quiz        Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  submissionKey String?
+  score       Int
+  total       Int
+  createdAt   DateTime        @default(now())
+  answers     StudentAnswer[]
+
+  @@unique([ownerId, submissionKey])
+  @@index([ownerId, createdAt])
+  @@index([quizId])
+}
+
+model StudentAnswer {
+  id              String            @id @default(cuid())
+  attemptId       String
+  attempt         QuizAttempt       @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question          @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answer          String
+  assessment      AssessmentResult?
+  createdAt       DateTime          @default(now())
+
+  @@unique([attemptId, questionId])
+  @@index([questionId])
+}
+
+model AssessmentResult {
+  id                 String        @id @default(cuid())
+  answerId           String        @unique
+  answer             StudentAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  correct            Boolean?
+  reviewRequired     Boolean
+  correctConcepts    String[]
+  missingConcepts    String[]
+  incorrectStatements String[]
+  createdAt          DateTime      @default(now())
+}
+
+model TopicProgress {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  topicId   String
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  attempts  Int      @default(0)
+  correct   Int      @default(0)
+  total     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerId, topicId])
+  @@index([topicId])
+}
+
+model RevisionItem {
+  id          String    @id @default(cuid())
+  ownerId     String
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  topicId     String
+  topic       Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  dueAt       DateTime
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([ownerId, topicId])
+  @@index([ownerId, dueAt])
+  @@index([topicId])
+}
+
+model UsageBucket {
+  key        String   @id
+  count      Int      @default(0)
+  expiresAt  DateTime
+
+  @@index([expiresAt])
+}
+
+model UsageRecord {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  capability  String
+  createdAt   DateTime @default(now())
+
+  @@index([ownerId, createdAt])
+}
+
+model ModelHealthRecord {
+  id        String   @id @default(cuid())
+  modelId   String
+  status    String
+  latencyMs Int?
+  createdAt DateTime @default(now())
+
+  @@index([modelId, createdAt])
+}
+
+model AiAction {
+  id           String    @id @default(cuid())
+  ownerId      String
+  owner        User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  kind         String
+  requestKey   String
+  fingerprint  String
+  status       String
+  localOperations String[] @default([])
+  lease        String?
+  leaseUntil   DateTime?
+  resultRef    String?
+  replayBytes  Bytes?
+  replayType   String?
+  replayUntil  DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  attempts     AiProviderAttempt[]
+
+  @@unique([ownerId, kind, requestKey])
+  @@index([ownerId, kind, createdAt])
+  @@index([ownerId, resultRef])
+}
+
+model AiProviderAttempt {
+  id                String    @id @default(cuid())
+  actionId          String?
+  action            AiAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
+  ownerId           String
+  owner             User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  operation         String
+  provider          String
+  modelId           String
+  endpoint          String
+  status            String
+  latencyMs         Int?
+  rateScope         String?
+  rateLimitCategory String?
+  retryAt           DateTime?
+  remainingRequests Int?
+  inputTokens       Int?
+  outputTokens      Int?
+  createdAt         DateTime  @default(now())
+
+  @@index([ownerId, createdAt])
+  @@index([actionId])
+  @@index([provider, createdAt])
+}
+
+model AiProviderCooldown {
+  scope         String   @id
+  status        String
+  until         DateTime
+  retryCategory String?
+}
